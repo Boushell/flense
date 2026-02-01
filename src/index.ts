@@ -1,28 +1,87 @@
 /**
- * Flense API Client
- * Official client library for the Flense document parsing service.
+ * Flense SDK
+ *
+ * Official TypeScript/JavaScript client library for the Flense document parsing API.
+ *
+ * @packageDocumentation
+ * @module flense
+ *
+ * @example Basic usage
+ * ```typescript
+ * import { Flense } from 'flense';
+ *
+ * const flense = new Flense({ apiKey: 'flense_...' });
+ *
+ * // Parse a URL
+ * const result = await flense.parseUrl('https://example.com/doc.pdf').wait();
+ * console.log(result.markdown);
+ *
+ * // Parse a file
+ * const file = fs.readFileSync('document.pdf');
+ * const result = await flense.parseFile(file, 'document.pdf').wait();
+ * ```
+ *
+ * @example With real-time progress updates
+ * ```typescript
+ * const job = flense.parseFile(file, 'document.pdf');
+ * job.subscribe({
+ *   onProgress: (p) => console.log(`${p.progress}% - ${p.stage}`),
+ *   onContent: (c) => console.log(`Page ${c.page} ready`),
+ *   onComplete: (s) => console.log('Done!', s.output?.markdown),
+ * });
+ * ```
  */
 
+/**
+ * Configuration options for the Flense client.
+ */
 export interface FlenseConfig {
+  /**
+   * Your Flense API key.
+   * Get one at https://flense.dev or by calling POST /v1/auth/api-key
+   */
   apiKey?: string;
+
+  /**
+   * Base URL for the Flense API.
+   * @default "https://api.flense.dev"
+   */
   baseUrl?: string;
 }
 
+/**
+ * Result of creating a parse job.
+ */
 export interface ParseResult {
+  /** The unique job ID for tracking this parse operation */
   jobId: string;
 }
 
+/**
+ * Result of a synchronous parse operation.
+ */
 export interface ParseFileResult {
+  /** Whether the parse was successful */
   success: boolean;
+  /** The parsed markdown content */
   markdown: string;
 }
 
+/**
+ * Result of a completed parse job.
+ */
 export interface JobResult {
+  /** Whether the job completed successfully */
   success: boolean;
+  /** The parsed markdown content */
   markdown: string;
+  /** The final job state */
   state: string;
 }
 
+/**
+ * Possible states for a parse job.
+ */
 export type JobState =
   | "created"
   | "active"
@@ -31,44 +90,84 @@ export type JobState =
   | "cancelled"
   | "archived";
 
+/**
+ * Full status of a parse job.
+ */
 export interface JobStatus {
+  /** Unique job identifier */
   id: string;
+  /** Current job state */
   state: JobState;
+  /** Job input data */
   data?: Record<string, unknown>;
+  /** Job output when completed */
   output?: {
+    /** Document ID */
     documentId?: string;
+    /** Parsed content */
     content?: string;
+    /** Parsed markdown */
     markdown?: string;
+    /** Processing time in milliseconds */
     processingTime?: number;
   };
+  /** When the job was created */
   createdOn?: string;
+  /** When processing started */
   startedOn?: string;
+  /** When processing completed */
   completedOn?: string;
+  /** Number of retry attempts */
   retryCount?: number;
+  /** Maximum retry attempts allowed */
   retryLimit?: number;
+  /** Error message if job failed */
   error?: string;
 }
 
+/**
+ * Progress update during document parsing.
+ */
 export interface ProgressUpdate {
+  /** Overall progress percentage (0-100) */
   progress: number;
+  /** Current processing stage description */
   stage: string;
+  /** Current page being processed */
   currentPage?: number;
+  /** Total number of pages in the document */
   totalPages?: number;
+  /** Average time per page in seconds */
   avgPageTime?: number;
+  /** Estimated time remaining in seconds */
   estimatedTimeRemaining?: number;
 }
 
+/**
+ * A chunk of parsed content from a specific page.
+ */
 export interface ContentChunk {
+  /** Page number (1-indexed) */
   page: number;
+  /** Parsed content for this page */
   content: string;
 }
 
+/**
+ * Callbacks for subscribing to job updates.
+ */
 export interface JobSubscriptionCallbacks {
+  /** Called on any status change */
   onStatus?: (status: JobStatus) => void;
+  /** Called when progress updates are received */
   onProgress?: (progress: ProgressUpdate) => void;
+  /** Called when a page's content is ready */
   onContent?: (content: ContentChunk) => void;
+  /** Called when the job completes successfully */
   onComplete?: (status: JobStatus) => void;
+  /** Called when the job fails */
   onFailed?: (status: JobStatus) => void;
+  /** Called on any error (connection, parsing, etc.) */
   onError?: (error: Error) => void;
 }
 
@@ -148,6 +247,29 @@ function generateDocumentId(): string {
 
 /**
  * Represents a parse job that can be subscribed to for real-time updates.
+ *
+ * ParseJob implements PromiseLike, so you can await it directly to get the job ID,
+ * or call `.wait()` to wait for the full result, or `.subscribe()` for real-time updates.
+ *
+ * @example Await for job ID only
+ * ```typescript
+ * const { jobId } = await flense.parseFile(file, 'doc.pdf');
+ * ```
+ *
+ * @example Wait for complete result
+ * ```typescript
+ * const result = await flense.parseFile(file, 'doc.pdf').wait();
+ * console.log(result.markdown);
+ * ```
+ *
+ * @example Subscribe to real-time updates
+ * ```typescript
+ * const job = flense.parseFile(file, 'doc.pdf');
+ * job.subscribe({
+ *   onProgress: (p) => console.log(`${p.progress}%`),
+ *   onComplete: (s) => console.log('Done!'),
+ * });
+ * ```
  */
 export class ParseJob implements PromiseLike<ParseResult> {
   private jobIdPromise: Promise<string> | null = null;
@@ -170,6 +292,7 @@ export class ParseJob implements PromiseLike<ParseResult> {
 
   /**
    * Get the job ID (available after job is created).
+   * Returns null until the job creation request completes.
    */
   get jobId(): string | null {
     return this._jobId;
@@ -188,23 +311,57 @@ export class ParseJob implements PromiseLike<ParseResult> {
 
   /**
    * Wait for the job to complete and return the result.
-   * Uses polling - for real-time updates use subscribe() instead.
+   *
+   * Uses polling to check job status. For real-time updates with progress
+   * information, use {@link subscribe} instead.
+   *
+   * @returns Promise that resolves with the job result when complete
+   * @throws Error if the job fails
+   *
+   * @example
+   * ```typescript
+   * const result = await flense.parseFile(file, 'doc.pdf').wait();
+   * console.log(result.markdown);
+   * ```
    */
   wait(): Promise<JobResult> {
     return this.getJobId().then((jobId) => this.client.waitForJob(jobId));
   }
 
   /**
-   * Subscribe to real-time job updates via SSE.
-   * Returns an unsubscribe function.
+   * Subscribe to real-time job updates via Server-Sent Events.
+   *
+   * This provides the best user experience for large documents, as you receive
+   * progress updates and page content as they become available.
+   *
+   * @param callbacks - Callback functions for different event types
+   * @returns Unsubscribe function to close the connection
    *
    * @example
-   * const job = flense.parseFile(file, filename);
+   * ```typescript
+   * const job = flense.parseFile(file, 'document.pdf');
+   *
    * const unsubscribe = job.subscribe({
-   *   onProgress: (p) => console.log(`${p.progress}% - ${p.stage}`),
-   *   onContent: (c) => console.log(`Page ${c.page}: ${c.content.slice(0, 50)}...`),
-   *   onComplete: (status) => console.log('Done!', status.output?.content),
+   *   onProgress: ({ progress, stage, currentPage, totalPages }) => {
+   *     console.log(`${progress}% - ${stage}`);
+   *     if (currentPage && totalPages) {
+   *       console.log(`Page ${currentPage}/${totalPages}`);
+   *     }
+   *   },
+   *   onContent: ({ page, content }) => {
+   *     console.log(`Page ${page} ready: ${content.length} chars`);
+   *   },
+   *   onComplete: (status) => {
+   *     console.log('Done!', status.output?.markdown);
+   *   },
+   *   onError: (error) => {
+   *     console.error('Failed:', error.message);
+   *   },
    * });
+   *
+   * // Later, to stop receiving updates:
+   * unsubscribe();
+   * ```
    */
   subscribe(callbacks: JobSubscriptionCallbacks): () => void {
     let unsubscribe: (() => void) | null = null;
@@ -222,10 +379,55 @@ export class ParseJob implements PromiseLike<ParseResult> {
   }
 }
 
+/**
+ * Flense API client for parsing documents into markdown.
+ *
+ * @example Basic usage
+ * ```typescript
+ * import { Flense } from 'flense';
+ *
+ * const flense = new Flense({ apiKey: 'flense_...' });
+ *
+ * // Parse a URL
+ * const result = await flense.parseUrl('https://example.com/doc.pdf').wait();
+ * console.log(result.markdown);
+ * ```
+ *
+ * @example Using environment variable
+ * ```typescript
+ * // Set FLENSE_API_KEY environment variable
+ * const flense = new Flense();
+ * ```
+ */
 export class Flense {
   private apiKey: string;
   private baseUrl: string;
 
+  /**
+   * Create a new Flense client.
+   *
+   * @param config - Configuration options
+   * @throws Error if no API key is provided or found in environment
+   *
+   * @example With explicit API key
+   * ```typescript
+   * const flense = new Flense({ apiKey: 'flense_abc123...' });
+   * ```
+   *
+   * @example With environment variable
+   * ```typescript
+   * // Set FLENSE_API_KEY=flense_abc123...
+   * const flense = new Flense();
+   * ```
+   *
+   * @example With custom base URL
+   * ```typescript
+   * const flense = new Flense({
+   *   apiKey: 'flense_abc123...',
+   *   baseUrl: 'https://api.staging.flense.dev',
+   * });
+   * ```
+   */
   constructor(config?: FlenseConfig) {
     const apiKey = config?.apiKey ?? process.env.FLENSE_API_KEY;
     if (!apiKey) {
@@ -276,22 +478,35 @@ export class Flense {
 
   /**
    * Parse a document from a public URL.
-   * Returns a ParseJob that can be awaited for the jobId,
-   * or call .wait() to wait for the result, or .subscribe() for real-time updates.
    *
-   * @example
-   * // Get job ID only
+   * Returns a ParseJob that can be:
+   * - Awaited for the job ID only
+   * - Called with `.wait()` to wait for the complete result
+   * - Called with `.subscribe()` for real-time progress updates
+   *
+   * @param url - Public URL of the document to parse
+   * @returns A ParseJob for tracking the parse operation
+   *
+   * @example Get job ID only
+   * ```typescript
    * const { jobId } = await flense.parseUrl('https://example.com/doc.pdf');
+   * console.log('Job started:', jobId);
+   * ```
    *
-   * // Wait for result (polling)
+   * @example Wait for complete result
+   * ```typescript
    * const result = await flense.parseUrl('https://example.com/doc.pdf').wait();
+   * console.log(result.markdown);
+   * ```
    *
-   * // Subscribe to real-time updates
+   * @example With progress updates
+   * ```typescript
    * const job = flense.parseUrl('https://example.com/doc.pdf');
    * job.subscribe({
-   *   onProgress: (p) => console.log(p.progress),
-   *   onComplete: (s) => console.log(s.output?.content),
+   *   onProgress: (p) => console.log(`${p.progress}%`),
+   *   onComplete: (s) => console.log(s.output?.markdown),
    * });
+   * ```
    */
   parseUrl(url: string): ParseJob {
     const createJob = async (): Promise<string> => {
@@ -323,28 +538,47 @@ export class Flense {
 
   /**
    * Parse a document from a file.
+   *
    * Returns a ParseJob for tracking progress and getting results.
+   * For large files, use `.subscribe()` to get real-time progress updates
+   * and page-by-page content as it's processed.
    *
-   * For large files, use .subscribe() to get real-time progress and
-   * page-by-page content as it's processed.
+   * @param file - The file to parse (Buffer, File, or Blob)
+   * @param filename - Name of the file (used for MIME type detection)
+   * @returns A ParseJob for tracking the parse operation
    *
-   * @example
-   * // Simple usage - wait for complete result
+   * @example Simple usage - wait for complete result
+   * ```typescript
+   * const file = fs.readFileSync('document.pdf');
    * const result = await flense.parseFile(file, 'document.pdf').wait();
+   * console.log(result.markdown);
+   * ```
    *
-   * // With progress updates
+   * @example Browser file input
+   * ```typescript
+   * const input = document.querySelector('input[type="file"]');
+   * const file = input.files[0];
+   * const result = await flense.parseFile(file, file.name).wait();
+   * ```
+   *
+   * @example With progress updates
+   * ```typescript
    * const job = flense.parseFile(file, 'document.pdf');
    * job.subscribe({
    *   onProgress: ({ progress, stage, currentPage, totalPages }) => {
-   *     console.log(`${progress}% - ${stage} (page ${currentPage}/${totalPages})`);
+   *     console.log(`${progress}% - ${stage}`);
+   *     if (currentPage && totalPages) {
+   *       console.log(`Processing page ${currentPage}/${totalPages}`);
+   *     }
    *   },
    *   onContent: ({ page, content }) => {
-   *     console.log(`Page ${page} complete`);
+   *     console.log(`Page ${page} complete: ${content.length} characters`);
    *   },
    *   onComplete: (status) => {
-   *     console.log('All done!', status.output?.content);
+   *     console.log('All done!', status.output?.markdown);
    *   },
    * });
+   * ```
    */
   parseFile(file: Buffer | File | Blob, filename: string): ParseJob {
     const createJob = async (): Promise<string> => {
@@ -376,7 +610,19 @@ export class Flense {
 
   /**
    * Parse a file synchronously (no streaming).
-   * For large files, prefer parseFile() with subscribe() for better UX.
+   *
+   * This method waits for the entire document to be parsed before returning.
+   * For large files, prefer {@link parseFile} with `.subscribe()` for better UX.
+   *
+   * @param file - The file to parse
+   * @param filename - Name of the file
+   * @returns Promise resolving to the parsed result
+   *
+   * @example
+   * ```typescript
+   * const result = await flense.parseFileSync(file, 'document.pdf');
+   * console.log(result.markdown);
+   * ```
    */
   async parseFileSync(
     file: Buffer | File | Blob,
@@ -407,6 +653,15 @@ export class Flense {
 
   /**
    * Get the current status of a job.
+   *
+   * @param jobId - The job ID to check
+   * @returns Promise resolving to the job status
+   *
+   * @example
+   * ```typescript
+   * const status = await flense.getJobStatus('job_abc123');
+   * console.log(status.state); // 'active', 'completed', 'failed', etc.
+   * ```
    */
   async getJobStatus(jobId: string): Promise<JobStatus> {
     return this.request<JobStatus>(`/v1/queue/jobs/${jobId}`);
@@ -414,9 +669,30 @@ export class Flense {
 
   /**
    * Subscribe to real-time job updates via Server-Sent Events.
-   * Returns an unsubscribe function to close the connection.
    *
-   * Note: This requires EventSource support (browsers, or polyfill in Node.js).
+   * This is the low-level subscription method. For most use cases,
+   * prefer using `parseFile().subscribe()` or `parseUrl().subscribe()`.
+   *
+   * @param jobId - The job ID to subscribe to
+   * @param callbacks - Callback functions for different event types
+   * @returns Unsubscribe function to close the connection
+   *
+   * @remarks
+   * Requires EventSource support (browsers, or polyfill in Node.js).
+   * The connection will automatically close when the job completes,
+   * fails, is cancelled, or times out (5 minutes max).
+   *
+   * @example
+   * ```typescript
+   * const unsubscribe = flense.subscribeToJob('job_abc123', {
+   *   onStatus: (s) => console.log('Status:', s.state),
+   *   onProgress: (p) => console.log('Progress:', p.progress),
+   *   onComplete: (s) => console.log('Done:', s.output?.markdown),
+   * });
+   *
+   * // Later, to stop receiving updates:
+   * unsubscribe();
+   * ```
    */
   subscribeToJob(
     jobId: string,
@@ -522,7 +798,19 @@ export class Flense {
 
   /**
    * Wait for a job to complete and return the result.
-   * Uses polling - for real-time updates use subscribeToJob() instead.
+   *
+   * Uses polling to check job status periodically.
+   * For real-time updates, use {@link subscribeToJob} instead.
+   *
+   * @param jobId - The job ID to wait for
+   * @returns Promise resolving to the job result
+   * @throws Error if the job fails
+   *
+   * @example
+   * ```typescript
+   * const result = await flense.waitForJob('job_abc123');
+   * console.log(result.markdown);
+   * ```
    */
   async waitForJob(jobId: string): Promise<JobResult> {
     const pollInterval = 1000;
