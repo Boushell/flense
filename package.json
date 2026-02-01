@@ -10,6 +10,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react.js",
+      "types": "./dist/react.d.ts"
     }
   },
   "files": [
@@ -22,12 +26,17 @@
     "check-types": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "pnpm run build",
+    "test:manual": "tsx test/manual.ts"
   },
   "keywords": [
     "flense",
     "api",
-    "client"
+    "client",
+    "document",
+    "parsing",
+    "pdf",
+    "markdown"
   ],
   "author": "",
   "license": "MIT",
@@ -36,11 +45,21 @@
     "url": "https://github.com/Boushell/flense.git"
   },
   "dependencies": {},
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
+    "@types/react": "^19.0.0",
     "eslint": "^9.39.1",
+    "tsx": "^4.19.0",
     "typescript": "5.9.2"
   }
 }
