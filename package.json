@@ -1,7 +1,7 @@
 {
   "name": "flense",
   "version": "0.0.2",
-  "description": "Official Flense API client library",
+  "description": "Convert PDF, DOCX, images to markdown. Document parsing SDK with OCR, table extraction, and real-time progress.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -30,13 +30,20 @@
     "test:manual": "tsx test/manual.ts"
   },
   "keywords": [
-    "flense",
-    "api",
-    "client",
-    "document",
-    "parsing",
     "pdf",
-    "markdown"
+    "markdown",
+    "pdf-to-markdown",
+    "document-parser",
+    "ocr",
+    "pdf-parser",
+    "docx",
+    "pdf-extraction",
+    "text-extraction",
+    "image-to-text",
+    "document-conversion",
+    "table-extraction",
+    "pdf-reader",
+    "flense"
   ],
   "author": "",
   "license": "MIT",
