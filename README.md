@@ -1,6 +1,8 @@
 # Flense
 
-Convert PDFs, images, and documents to markdown with a simple API.
+TypeScript/JavaScript client for the [Flense](https://flense.dev) document parsing API. Convert PDFs, images, and documents to markdown.
+
+Flense is a paid document parsing service. [Get a free demo API key](https://flense.dev) to try it out.
 
 ```bash
 npm install flense
