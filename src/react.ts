@@ -9,9 +9,10 @@ import {
   type ContentChunk,
   type JobState,
   type ParseJob,
+  type ParseOptions,
 } from "./index";
 
-export type { JobStatus, ProgressUpdate, ContentChunk, JobState };
+export type { JobStatus, ProgressUpdate, ContentChunk, JobState, ParseOptions };
 
 export interface UseFlenseOptions extends FlenseConfig {}
 
@@ -38,10 +39,10 @@ export interface UseParseJobReturn {
   content: string | null;
   /** Error if job failed */
   error: Error | null;
-  /** Parse a file - returns cleanup function */
-  parseFile: (file: File) => void;
-  /** Parse a URL - returns cleanup function */
-  parseUrl: (url: string) => void;
+  /** Parse a file with optional configuration */
+  parseFile: (file: File, options?: ParseOptions) => void;
+  /** Parse a URL with optional configuration */
+  parseUrl: (url: string, options?: ParseOptions) => void;
   /** Reset state for a new job */
   reset: () => void;
 }
@@ -172,10 +173,14 @@ export function useParseJob(
   );
 
   const parseFile = useCallback(
-    (file: File) => {
+    (file: File, options?: ParseOptions) => {
       try {
         const client = getClient();
-        const job = client.parseFile(file, file.name);
+        let job = client.parseFile(file, file.name);
+        // Apply options using fluent API
+        if (options?.ocr !== undefined) job = job.withOCR(options.ocr);
+        if (options?.tables !== undefined) job = job.withTables(options.tables);
+        if (options?.images !== undefined) job = job.withImages(options.images);
         subscribeToJob(job);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -187,10 +192,14 @@ export function useParseJob(
   );
 
   const parseUrl = useCallback(
-    (url: string) => {
+    (url: string, options?: ParseOptions) => {
       try {
         const client = getClient();
-        const job = client.parseUrl(url);
+        let job = client.parseUrl(url);
+        // Apply options using fluent API
+        if (options?.ocr !== undefined) job = job.withOCR(options.ocr);
+        if (options?.tables !== undefined) job = job.withTables(options.tables);
+        if (options?.images !== undefined) job = job.withImages(options.images);
         subscribeToJob(job);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));

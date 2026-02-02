@@ -154,6 +154,41 @@ export interface ContentChunk {
 }
 
 /**
+ * Options for configuring document parsing behavior.
+ * All features are OFF by default for fastest processing.
+ * Use the fluent API (.withOCR(), .withTables(), .withImages()) to enable features.
+ */
+export interface ParseOptions {
+  /**
+   * Enable OCR (Optical Character Recognition) for scanned documents.
+   * Only needed for scanned/image-based PDFs.
+   * @default false
+   */
+  ocr?: boolean;
+
+  /**
+   * Enable table structure detection and parsing.
+   * Enable if you need structured table data in markdown.
+   * @default false
+   */
+  tables?: boolean;
+
+  /**
+   * Enable image extraction and upload.
+   * Enable if you need images embedded in the output.
+   * @default false
+   */
+  images?: boolean;
+
+  /**
+   * Number of pages to process concurrently.
+   * Higher values = faster but more memory usage.
+   * @default 2
+   */
+  concurrency?: number;
+}
+
+/**
  * Callbacks for subscribing to job updates.
  */
 export interface JobSubscriptionCallbacks {
@@ -251,6 +286,8 @@ function generateDocumentId(): string {
  * ParseJob implements PromiseLike, so you can await it directly to get the job ID,
  * or call `.wait()` to wait for the full result, or `.subscribe()` for real-time updates.
  *
+ * Use the fluent API to configure parsing options:
+ *
  * @example Await for job ID only
  * ```typescript
  * const { jobId } = await flense.parseFile(file, 'doc.pdf');
@@ -270,19 +307,120 @@ function generateDocumentId(): string {
  *   onComplete: (s) => console.log('Done!'),
  * });
  * ```
+ *
+ * @example Optimize for speed (text-based PDF)
+ * ```typescript
+ * const result = await flense.parseFile(file, 'doc.pdf')
+ *   .withOCR(false)      // Skip OCR - much faster for text PDFs
+ *   .withTables(false)   // Skip table detection
+ *   .wait();
+ * ```
  */
 export class ParseJob implements PromiseLike<ParseResult> {
   private jobIdPromise: Promise<string> | null = null;
   private _jobId: string | null = null;
+  // Default: all features OFF for fastest processing
+  private _options: ParseOptions = {
+    ocr: false,
+    tables: false,
+    images: false,
+  };
 
   constructor(
-    private createJob: () => Promise<string>,
+    private createJob: (options: ParseOptions) => Promise<string>,
     private client: Flense
   ) {}
 
+  /**
+   * Enable OCR (Optical Character Recognition).
+   *
+   * OCR is OFF by default. Enable for scanned/image-based PDFs
+   * where text is not directly extractable. Adds ~5-8s per page.
+   *
+   * @param enabled - Whether to enable OCR (default: true when called)
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * // Enable OCR for scanned documents
+   * flense.parseFile(file, 'scanned.pdf').withOCR().wait();
+   * ```
+   */
+  withOCR(enabled: boolean = true): this {
+    this._options.ocr = enabled;
+    return this;
+  }
+
+  /**
+   * Enable table structure detection.
+   *
+   * Table detection is OFF by default. Enable if you need
+   * structured table data in your markdown output. Adds ~2-3s per page.
+   *
+   * @param enabled - Whether to enable table detection (default: true when called)
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * // Enable table parsing
+   * flense.parseFile(file, 'report.pdf').withTables().wait();
+   * ```
+   */
+  withTables(enabled: boolean = true): this {
+    this._options.tables = enabled;
+    return this;
+  }
+
+  /**
+   * Enable image extraction and upload.
+   *
+   * Image extraction is OFF by default. When enabled, images are
+   * extracted and uploaded to cloud storage with URLs in markdown.
+   *
+   * @param enabled - Whether to enable image extraction (default: true when called)
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * // Enable image extraction
+   * flense.parseFile(file, 'doc.pdf').withImages().wait();
+   * ```
+   */
+  withImages(enabled: boolean = true): this {
+    this._options.images = enabled;
+    return this;
+  }
+
+  /**
+   * Set the number of pages to process concurrently.
+   *
+   * Higher concurrency = faster processing but more memory usage.
+   * Default is 2. Increase if you have more memory available.
+   *
+   * @param workers - Number of concurrent page workers (1-10)
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * // Process 4 pages at a time for faster results
+   * flense.parseFile(file, 'doc.pdf').withConcurrency(4).wait();
+   * ```
+   */
+  withConcurrency(workers: number): this {
+    this._options.concurrency = Math.max(1, Math.min(10, workers));
+    return this;
+  }
+
+  /**
+   * Get the current parse options.
+   */
+  get options(): ParseOptions {
+    return { ...this._options };
+  }
+
   private getJobId(): Promise<string> {
     if (!this.jobIdPromise) {
-      this.jobIdPromise = this.createJob().then((id) => {
+      this.jobIdPromise = this.createJob(this._options).then((id) => {
         this._jobId = id;
         return id;
       });
@@ -509,7 +647,7 @@ export class Flense {
    * ```
    */
   parseUrl(url: string): ParseJob {
-    const createJob = async (): Promise<string> => {
+    const createJob = async (options: ParseOptions): Promise<string> => {
       const filename = getFilenameFromUrl(url);
       const mimeType = getMimeTypeFromFilename(filename);
       const documentId = generateDocumentId();
@@ -526,6 +664,11 @@ export class Flense {
             filename,
             mimeType,
             documentId,
+            options: {
+              ocr: options.ocr,
+              tables: options.tables,
+              images: options.images,
+            },
           }),
         }
       );
@@ -581,7 +724,7 @@ export class Flense {
    * ```
    */
   parseFile(file: Buffer | File | Blob, filename: string): ParseJob {
-    const createJob = async (): Promise<string> => {
+    const createJob = async (options: ParseOptions): Promise<string> => {
       const formData = new FormData();
 
       if (typeof Buffer !== "undefined" && Buffer.isBuffer(file)) {
@@ -592,6 +735,15 @@ export class Flense {
         formData.append("file", blob, filename);
       } else {
         formData.append("file", file as Blob, filename);
+      }
+
+      // Add parse options as JSON
+      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined) {
+        formData.append("options", JSON.stringify({
+          ocr: options.ocr,
+          tables: options.tables,
+          images: options.images,
+        }));
       }
 
       const response = await this.request<QueueJobCreateResponse>(
