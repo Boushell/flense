@@ -738,11 +738,12 @@ export class Flense {
       }
 
       // Add parse options as JSON
-      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined) {
+      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined || options.concurrency !== undefined) {
         formData.append("options", JSON.stringify({
           ocr: options.ocr,
           tables: options.tables,
           images: options.images,
+          concurrency: options.concurrency,
         }));
       }
 
