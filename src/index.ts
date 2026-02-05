@@ -179,13 +179,6 @@ export interface ParseOptions {
    * @default false
    */
   images?: boolean;
-
-  /**
-   * Number of pages to process concurrently.
-   * Higher values = faster but more memory usage.
-   * @default 2
-   */
-  concurrency?: number;
 }
 
 /**
@@ -388,26 +381,6 @@ export class ParseJob implements PromiseLike<ParseResult> {
    */
   withImages(enabled: boolean = true): this {
     this._options.images = enabled;
-    return this;
-  }
-
-  /**
-   * Set the number of pages to process concurrently.
-   *
-   * Higher concurrency = faster processing but more memory usage.
-   * Default is 2. Increase if you have more memory available.
-   *
-   * @param workers - Number of concurrent page workers (1-10)
-   * @returns this for chaining
-   *
-   * @example
-   * ```typescript
-   * // Process 4 pages at a time for faster results
-   * flense.parseFile(file, 'doc.pdf').withConcurrency(4).wait();
-   * ```
-   */
-  withConcurrency(workers: number): this {
-    this._options.concurrency = Math.max(1, Math.min(10, workers));
     return this;
   }
 
@@ -738,12 +711,11 @@ export class Flense {
       }
 
       // Add parse options as JSON
-      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined || options.concurrency !== undefined) {
+      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined) {
         formData.append("options", JSON.stringify({
           ocr: options.ocr,
           tables: options.tables,
           images: options.images,
-          concurrency: options.concurrency,
         }));
       }
 

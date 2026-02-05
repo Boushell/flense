@@ -181,7 +181,6 @@ export function useParseJob(
         if (options?.ocr !== undefined) job = job.withOCR(options.ocr);
         if (options?.tables !== undefined) job = job.withTables(options.tables);
         if (options?.images !== undefined) job = job.withImages(options.images);
-        if (options?.concurrency !== undefined) job = job.withConcurrency(options.concurrency);
         subscribeToJob(job);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -201,7 +200,6 @@ export function useParseJob(
         if (options?.ocr !== undefined) job = job.withOCR(options.ocr);
         if (options?.tables !== undefined) job = job.withTables(options.tables);
         if (options?.images !== undefined) job = job.withImages(options.images);
-        if (options?.concurrency !== undefined) job = job.withConcurrency(options.concurrency);
         subscribeToJob(job);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
