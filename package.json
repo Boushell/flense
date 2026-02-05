@@ -1,6 +1,6 @@
 {
   "name": "flense",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "Convert PDF, DOCX, images to markdown. Document parsing SDK with OCR, table extraction, and real-time progress.",
   "type": "module",
   "main": "./dist/index.js",
