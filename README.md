@@ -33,9 +33,10 @@ All features are OFF by default for fastest processing. Enable them as needed:
 ```typescript
 const result = await flense
   .parseFile(file, 'document.pdf')
-  .withOCR()      // Enable OCR for scanned documents
-  .withTables()   // Enable table structure detection
-  .withImages()   // Enable image extraction
+  .withOCR()       // Enable OCR for scanned documents
+  .withTables()    // Enable table structure detection
+  .withImages()    // Enable image extraction
+  .withPageStreaming()  // Stream markdown per-page as each completes
   .wait();
 ```
 
@@ -44,6 +45,7 @@ const result = await flense
 | `.withOCR(enabled?)` | Enable OCR for scanned/image-based PDFs |
 | `.withTables(enabled?)` | Enable table structure detection |
 | `.withImages(enabled?)` | Enable image extraction and upload |
+| `.withPageStreaming(enabled?)` | Stream markdown per-page as each page completes |
 
 ## Real-time Progress
 

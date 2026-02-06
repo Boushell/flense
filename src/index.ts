@@ -179,6 +179,15 @@ export interface ParseOptions {
    * @default false
    */
   images?: boolean;
+
+  /**
+   * Enable per-page streaming for multi-page documents.
+   * Splits the document into individual pages, processes them concurrently,
+   * and streams each page's markdown as it completes.
+   * Falls back to single-file processing for documents with fewer than 3 pages.
+   * @default false
+   */
+  pageStreaming?: boolean;
 }
 
 /**
@@ -317,6 +326,7 @@ export class ParseJob implements PromiseLike<ParseResult> {
     ocr: false,
     tables: false,
     images: false,
+    pageStreaming: false,
   };
 
   constructor(
@@ -381,6 +391,28 @@ export class ParseJob implements PromiseLike<ParseResult> {
    */
   withImages(enabled: boolean = true): this {
     this._options.images = enabled;
+    return this;
+  }
+
+  /**
+   * Enable per-page streaming.
+   *
+   * Page streaming is OFF by default. When enabled, multi-page documents
+   * are split into individual pages, processed concurrently, and each page's
+   * markdown is streamed to the client as it completes.
+   * Documents with fewer than 3 pages automatically fall back to single-file processing.
+   *
+   * @param enabled - Whether to enable page streaming (default: true when called)
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * // Enable page streaming for large documents
+   * flense.parseFile(file, 'report.pdf').withPageStreaming().wait();
+   * ```
+   */
+  withPageStreaming(enabled: boolean = true): this {
+    this._options.pageStreaming = enabled;
     return this;
   }
 
@@ -641,6 +673,7 @@ export class Flense {
               ocr: options.ocr,
               tables: options.tables,
               images: options.images,
+              pageStreaming: options.pageStreaming,
             },
           }),
         }
@@ -711,11 +744,12 @@ export class Flense {
       }
 
       // Add parse options as JSON
-      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined) {
+      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined || options.pageStreaming !== undefined) {
         formData.append("options", JSON.stringify({
           ocr: options.ocr,
           tables: options.tables,
           images: options.images,
+          pageStreaming: options.pageStreaming,
         }));
       }
 
