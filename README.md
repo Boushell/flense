@@ -46,6 +46,21 @@ const result = await flense
 | `.withTables(enabled?)` | Enable table structure detection |
 | `.withImages(enabled?)` | Enable image extraction and upload |
 | `.withPageStreaming(enabled?)` | Stream markdown per-page as each page completes |
+| `.disableCaching()` | Skip cache and force a fresh parse |
+
+## Caching
+
+File parse results are cached automatically. When the same file is uploaded with the same options, the cached result is returned instantly with no re-processing. The cache key is a SHA-256 hash of the file content and the parse options.
+
+```typescript
+// Caching is ON by default — identical files return instantly
+const result = await flense.parseFile(file, 'doc.pdf').wait();
+
+// Force a fresh parse
+const fresh = await flense.parseFile(file, 'doc.pdf').disableCaching().wait();
+```
+
+Caching only applies to `parseFile()`. URL parsing (`parseUrl()`) always fetches fresh content since the URL's content may change.
 
 ## Real-time Progress
 

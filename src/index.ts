@@ -188,6 +188,13 @@ export interface ParseOptions {
    * @default false
    */
   pageStreaming?: boolean;
+
+  /**
+   * Enable content-hash-based caching for file parsing.
+   * When enabled, identical files with identical options return cached results instantly.
+   * @default true
+   */
+  caching?: boolean;
 }
 
 /**
@@ -210,11 +217,13 @@ export interface JobSubscriptionCallbacks {
 
 interface QueueJobCreateResponse {
   success: boolean;
-  jobId: string;
+  jobId?: string;
   documentId?: string;
   remaining?: number;
   unlimited?: boolean;
   message?: string;
+  cached?: boolean;
+  markdown?: string;
 }
 
 interface QueueJobStatusResponse {
@@ -321,16 +330,21 @@ function generateDocumentId(): string {
 export class ParseJob implements PromiseLike<ParseResult> {
   private jobIdPromise: Promise<string> | null = null;
   private _jobId: string | null = null;
-  // Default: all features OFF for fastest processing
+  private _cachedResult: JobResult | null = null;
+  // Default: all features OFF for fastest processing, caching ON
   private _options: ParseOptions = {
     ocr: false,
     tables: false,
     images: false,
     pageStreaming: false,
+    caching: true,
   };
 
   constructor(
-    private createJob: (options: ParseOptions) => Promise<string>,
+    private createJob: (
+      options: ParseOptions,
+      setCachedResult: (result: JobResult) => void
+    ) => Promise<string>,
     private client: Flense
   ) {}
 
@@ -417,6 +431,25 @@ export class ParseJob implements PromiseLike<ParseResult> {
   }
 
   /**
+   * Disable content-hash-based caching for this parse job.
+   *
+   * By default, caching is enabled. When disabled, the file will always
+   * be re-parsed even if an identical file was parsed previously.
+   *
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * // Force re-parse even if cached
+   * flense.parseFile(file, 'doc.pdf').disableCaching().wait();
+   * ```
+   */
+  disableCaching(): this {
+    this._options.caching = false;
+    return this;
+  }
+
+  /**
    * Get the current parse options.
    */
   get options(): ParseOptions {
@@ -425,7 +458,10 @@ export class ParseJob implements PromiseLike<ParseResult> {
 
   private getJobId(): Promise<string> {
     if (!this.jobIdPromise) {
-      this.jobIdPromise = this.createJob(this._options).then((id) => {
+      this.jobIdPromise = this.createJob(
+        this._options,
+        (result) => { this._cachedResult = result; }
+      ).then((id) => {
         this._jobId = id;
         return id;
       });
@@ -468,7 +504,12 @@ export class ParseJob implements PromiseLike<ParseResult> {
    * ```
    */
   wait(): Promise<JobResult> {
-    return this.getJobId().then((jobId) => this.client.waitForJob(jobId));
+    return this.getJobId().then(() => {
+      if (this._cachedResult) {
+        return this._cachedResult;
+      }
+      return this.client.waitForJob(this._jobId!);
+    });
   }
 
   /**
@@ -512,6 +553,19 @@ export class ParseJob implements PromiseLike<ParseResult> {
 
     this.getJobId().then((jobId) => {
       if (cancelled) return;
+
+      // For cached results, fire onComplete immediately
+      if (this._cachedResult) {
+        const syntheticStatus: JobStatus = {
+          id: jobId,
+          state: "completed",
+          output: { markdown: this._cachedResult.markdown },
+        };
+        callbacks.onStatus?.(syntheticStatus);
+        callbacks.onComplete?.(syntheticStatus);
+        return;
+      }
+
       unsubscribe = this.client.subscribeToJob(jobId, callbacks);
     });
 
@@ -652,7 +706,7 @@ export class Flense {
    * ```
    */
   parseUrl(url: string): ParseJob {
-    const createJob = async (options: ParseOptions): Promise<string> => {
+    const createJob = async (options: ParseOptions, _setCachedResult: (result: JobResult) => void): Promise<string> => {
       const filename = getFilenameFromUrl(url);
       const mimeType = getMimeTypeFromFilename(filename);
       const documentId = generateDocumentId();
@@ -679,7 +733,7 @@ export class Flense {
         }
       );
 
-      return response.jobId;
+      return response.jobId!;
     };
 
     return new ParseJob(createJob, this);
@@ -730,7 +784,10 @@ export class Flense {
    * ```
    */
   parseFile(file: Buffer | File | Blob, filename: string): ParseJob {
-    const createJob = async (options: ParseOptions): Promise<string> => {
+    const createJob = async (
+      options: ParseOptions,
+      setCachedResult: (result: JobResult) => void
+    ): Promise<string> => {
       const formData = new FormData();
 
       if (typeof Buffer !== "undefined" && Buffer.isBuffer(file)) {
@@ -743,15 +800,14 @@ export class Flense {
         formData.append("file", file as Blob, filename);
       }
 
-      // Add parse options as JSON
-      if (options.ocr !== undefined || options.tables !== undefined || options.images !== undefined || options.pageStreaming !== undefined) {
-        formData.append("options", JSON.stringify({
-          ocr: options.ocr,
-          tables: options.tables,
-          images: options.images,
-          pageStreaming: options.pageStreaming,
-        }));
-      }
+      // Add parse options as JSON (include caching flag)
+      formData.append("options", JSON.stringify({
+        ocr: options.ocr,
+        tables: options.tables,
+        images: options.images,
+        pageStreaming: options.pageStreaming,
+        caching: options.caching,
+      }));
 
       const response = await this.request<QueueJobCreateResponse>(
         "/v1/queue/parse",
@@ -761,7 +817,17 @@ export class Flense {
         }
       );
 
-      return response.jobId;
+      // Handle cache hit: API returns cached markdown directly
+      if (response.cached && response.markdown) {
+        setCachedResult({
+          success: true,
+          markdown: response.markdown,
+          state: "completed",
+        });
+        return `cached:${response.documentId}`;
+      }
+
+      return response.jobId!;
     };
 
     return new ParseJob(createJob, this);
